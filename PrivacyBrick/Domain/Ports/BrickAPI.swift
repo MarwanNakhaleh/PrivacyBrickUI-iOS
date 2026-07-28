@@ -57,7 +57,16 @@ protocol BrickAPI {
     // Network Monitor
     func networkDevices() async throws -> [NetworkDevice]
 
+    // Whole-Home Protection (DHCP takeover)
+    func dhcpStatus() async throws -> DHCPStatus
+    func dhcpCheck() async throws -> DHCPCheck
+    func enableDHCP(force: Bool) async throws -> DHCPEnableResult
+    func disableDHCP() async throws -> BrickActionResult
+    func routerInfo() async throws -> RouterInfo
+
     // Device
     func deviceHealth() async throws -> DeviceHealth
     func rebootDevice() async throws -> BrickActionResult
+    func startUpdate() async throws -> BrickActionResult
+    func updateStatus() async throws -> UpdateStatus
 }

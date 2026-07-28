@@ -109,6 +109,28 @@ final class HTTPBrickClient: BrickAPI {
         return page.hosts
     }
 
+    // MARK: - Whole-Home Protection (DHCP takeover)
+
+    func dhcpStatus() async throws -> DHCPStatus {
+        try await request("GET", "/api/v1/dhcp/status")
+    }
+
+    func dhcpCheck() async throws -> DHCPCheck {
+        try await request("POST", "/api/v1/dhcp/check")
+    }
+
+    func enableDHCP(force: Bool) async throws -> DHCPEnableResult {
+        try await request("POST", "/api/v1/dhcp/enable", body: ["force": force])
+    }
+
+    func disableDHCP() async throws -> BrickActionResult {
+        try await request("POST", "/api/v1/dhcp/disable")
+    }
+
+    func routerInfo() async throws -> RouterInfo {
+        try await request("GET", "/api/v1/system/router")
+    }
+
     // MARK: - Device
 
     func deviceHealth() async throws -> DeviceHealth {
@@ -117,6 +139,14 @@ final class HTTPBrickClient: BrickAPI {
 
     func rebootDevice() async throws -> BrickActionResult {
         try await request("POST", "/api/v1/system/reboot")
+    }
+
+    func startUpdate() async throws -> BrickActionResult {
+        try await request("POST", "/api/v1/system/update")
+    }
+
+    func updateStatus() async throws -> UpdateStatus {
+        try await request("GET", "/api/v1/system/update/status")
     }
 
     // MARK: - Core machinery

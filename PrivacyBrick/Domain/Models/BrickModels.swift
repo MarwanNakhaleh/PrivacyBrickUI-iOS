@@ -175,6 +175,103 @@ struct NetworkDevicePage: Codable, Equatable {
     let hosts: [NetworkDevice]
 }
 
+// MARK: - Whole-Home Protection (DHCP)
+
+/// Tri-state answer from a network probe ("yes" / "no" / "error" on the wire).
+/// Anything unrecognized decodes as `.unknown` so a newer brick can't break the app.
+enum DHCPProbeResult: String, Codable, CaseIterable {
+    case yes, no, error, unknown
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = DHCPProbeResult(rawValue: raw) ?? .unknown
+    }
+}
+
+/// Whether the brick is currently the network's address-giver, and its lease pool.
+struct DHCPStatus: Codable, Equatable {
+    let enabled: Bool
+    let interface: String
+    let gateway: String
+    let rangeStart: String
+    let rangeEnd: String
+    let leaseCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, interface, gateway
+        case rangeStart = "range_start"
+        case rangeEnd = "range_end"
+        case leaseCount = "lease_count"
+    }
+}
+
+/// Result of probing the network before a DHCP takeover: is another DHCP
+/// server (the router) still answering, and can the brick pin its own IP?
+struct DHCPCheck: Codable, Equatable {
+    let interface: String
+    let piIP: String
+    let gatewayIP: String
+    let otherDHCP: DHCPProbeResult
+    let otherDHCPError: String
+    let staticIP: DHCPProbeResult
+
+    enum CodingKeys: String, CodingKey {
+        case interface
+        case piIP = "pi_ip"
+        case gatewayIP = "gateway_ip"
+        case otherDHCP = "other_dhcp"
+        case otherDHCPError = "other_dhcp_error"
+        case staticIP = "static_ip"
+    }
+}
+
+/// Result of turning the brick's DHCP server on.
+struct DHCPEnableResult: Codable, Equatable {
+    let ok: Bool
+    let message: String
+    let needsReboot: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case ok, message
+        case needsReboot = "needs_reboot"
+    }
+}
+
+/// Router brands the brick can recognize; drives in-app "turn off your
+/// router's DHCP" instructions. Unrecognized keys decode as `.unknown`.
+enum RouterVendor: String, Codable, CaseIterable {
+    case xfinity, netgear, tplink, eero, asus, verizon, att, unknown
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = RouterVendor(rawValue: raw) ?? .unknown
+    }
+}
+
+/// The home router as detected by the brick, including where its admin portal lives.
+struct RouterInfo: Codable, Equatable {
+    let gatewayIP: String
+    let gatewayMAC: String
+    let vendor: String
+    let vendorKey: RouterVendor
+    let portalURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case vendor
+        case gatewayIP = "gateway_ip"
+        case gatewayMAC = "gateway_mac"
+        case vendorKey = "vendor_key"
+        case portalURL = "portal_url"
+    }
+}
+
+// MARK: - System Update
+
+/// Whether a software update is currently running on the brick.
+struct UpdateStatus: Codable, Equatable {
+    let running: Bool
+}
+
 // MARK: - Device
 
 struct DeviceHealth: Codable, Equatable {

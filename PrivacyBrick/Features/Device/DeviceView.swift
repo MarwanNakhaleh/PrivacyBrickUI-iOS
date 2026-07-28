@@ -2,11 +2,26 @@ import SwiftUI
 
 /// The physical brick: health, connection route, reboot, unpair.
 struct DeviceView: View {
+    /// Where the "Update brick" flow currently is.
+    private enum UpdatePhase: Equatable {
+        case idle
+        case running(String)
+        case upToDate
+        case failed(String)
+    }
+
     @Environment(AppModel.self) private var appModel
     @State private var health: DeviceHealth?
     @State private var showRebootConfirm = false
     @State private var showForgetConfirm = false
     @State private var rebooting = false
+    @State private var updatePhase: UpdatePhase = .idle
+    @State private var updateTask: Task<Void, Never>?
+
+    private var isUpdating: Bool {
+        if case .running = updatePhase { return true }
+        return false
+    }
 
     var body: some View {
         List {
@@ -34,6 +49,43 @@ struct DeviceView: View {
                     Label(route.capitalized, systemImage: "point.3.filled.connected.trianglepath.dotted")
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            Section {
+                Button {
+                    startUpdate()
+                } label: {
+                    if case let .running(message) = updatePhase {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Updating…")
+                                Text(message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        Label("Update brick", systemImage: "arrow.down.circle")
+                    }
+                }
+                .disabled(isUpdating)
+                .accessibilityIdentifier("device.updateButton")
+
+                switch updatePhase {
+                case .upToDate:
+                    Label("Up to date", systemImage: "checkmark.circle")
+                        .foregroundStyle(.green)
+                        .accessibilityIdentifier("device.updateUpToDate")
+                case let .failed(message):
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                case .idle, .running:
+                    EmptyView()
+                }
+            } footer: {
+                Text("Downloads and installs the latest PrivacyBrick software. Protection keeps running while it updates.")
             }
 
             Section {
@@ -74,6 +126,44 @@ struct DeviceView: View {
         }
         .task { health = try? await appModel.api.deviceHealth() }
         .refreshable { health = try? await appModel.api.deviceHealth() }
+        .onDisappear {
+            updateTask?.cancel()
+            updateTask = nil
+        }
+    }
+
+    /// Kick off a software update, then poll (bounded) until the brick reports
+    /// it's done, and refresh the device info. The task is cancelled if the
+    /// user leaves the screen — the update itself keeps running on the brick.
+    private func startUpdate() {
+        updatePhase = .running("Starting update…")
+        updateTask = Task {
+            do {
+                let result = try await appModel.api.startUpdate()
+                updatePhase = .running(result.message)
+
+                var finished = false
+                for _ in 0 ..< 40 { // ~2 minutes at one poll every 3 seconds
+                    try? await Task.sleep(for: .seconds(3))
+                    if Task.isCancelled { return }
+                    guard let status = try? await appModel.api.updateStatus() else { continue }
+                    if !status.running {
+                        finished = true
+                        break
+                    }
+                }
+
+                if finished {
+                    health = try? await appModel.api.deviceHealth()
+                    await appModel.refresh()
+                    updatePhase = .upToDate
+                } else {
+                    updatePhase = .failed("The update is taking longer than expected. Check back in a few minutes.")
+                }
+            } catch {
+                updatePhase = .failed(error.localizedDescription)
+            }
+        }
     }
 
     private func reboot() {

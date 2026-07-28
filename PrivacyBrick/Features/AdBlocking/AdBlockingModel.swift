@@ -10,6 +10,7 @@ final class AdBlockingModel {
     private(set) var stats: AdBlockStats?
     private(set) var entries: [QueryLogEntry] = []
     private(set) var blocklists: [Blocklist] = []
+    private(set) var wholeHomeEnabled: Bool?
     private(set) var isLoading = false
     var errorMessage: String?
     var searchText = ""
@@ -25,6 +26,12 @@ final class AdBlockingModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Status line for the Whole-Home Protection entry row. Best-effort:
+    /// if the brick can't answer, the row just says "Set up".
+    func loadWholeHomeStatus() async {
+        wholeHomeEnabled = (try? await api.dhcpStatus())?.enabled
     }
 
     func loadQueryLog() async {

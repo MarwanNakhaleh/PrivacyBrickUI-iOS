@@ -48,6 +48,23 @@ struct AdBlockingView: View {
                     Label("Blocklists", systemImage: "shield.lefthalf.filled")
                 }
                 .accessibilityIdentifier("adblocking.blocklistsLink")
+
+                NavigationLink {
+                    WholeHomeView()
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Whole-home protection")
+                            Text(model?.wholeHomeEnabled == true
+                                 ? "On — brick manages your network" : "Set up")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "house.fill")
+                    }
+                }
+                .accessibilityIdentifier("adblocking.wholeHomeLink")
             }
 
             if let message = model?.errorMessage {
@@ -62,8 +79,12 @@ struct AdBlockingView: View {
         .task {
             if model == nil { model = AdBlockingModel(api: appModel.api) }
             await model?.loadStats()
+            await model?.loadWholeHomeStatus()
         }
-        .refreshable { await model?.loadStats() }
+        .refreshable {
+            await model?.loadStats()
+            await model?.loadWholeHomeStatus()
+        }
     }
 
     private var toggleBinding: Binding<Bool> {

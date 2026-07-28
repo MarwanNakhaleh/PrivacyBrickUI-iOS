@@ -10,6 +10,9 @@ final class MockBrickAPI: BrickAPI, @unchecked Sendable {
     private var adBlockingOn = true
     private var remoteAccessOn = true
     private var cloudFilteringOn = false
+    private var dhcpEnabled = false
+    private var dhcpCheckCount = 0
+    private var updateRunningUntil: Date?
     private var userBlocklists: [Blocklist] = [
         Blocklist(id: 1, name: "AdGuard DNS filter", url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt", enabled: true, rulesCount: 48_620),
         Blocklist(id: 2, name: "OISD Basic", url: "https://abp.oisd.nl/basic/", enabled: true, rulesCount: 212_340),
@@ -150,6 +153,55 @@ final class MockBrickAPI: BrickAPI, @unchecked Sendable {
         ]
     }
 
+    // MARK: - Whole-Home Protection (DHCP takeover)
+
+    /// Deterministic guided-flow simulation: the first probe finds the router
+    /// still serving DHCP (blocker), every later probe finds it off (ready) —
+    /// as if the user visited the portal in between.
+    func dhcpCheck() async throws -> DHCPCheck {
+        try await Task.sleep(for: .milliseconds(300))
+        dhcpCheckCount += 1
+        return DHCPCheck(
+            interface: "eth0", piIP: "192.168.1.42", gatewayIP: "192.168.1.1",
+            otherDHCP: dhcpCheckCount == 1 ? .yes : .no,
+            otherDHCPError: "",
+            staticIP: .yes
+        )
+    }
+
+    func dhcpStatus() async throws -> DHCPStatus {
+        DHCPStatus(
+            enabled: dhcpEnabled, interface: "eth0", gateway: "192.168.1.1",
+            rangeStart: "192.168.1.100", rangeEnd: "192.168.1.250",
+            leaseCount: dhcpEnabled ? 7 : 0
+        )
+    }
+
+    func enableDHCP(force: Bool) async throws -> DHCPEnableResult {
+        try await Task.sleep(for: .milliseconds(300))
+        dhcpEnabled = true
+        return DHCPEnableResult(
+            ok: true,
+            message: "Whole-home protection is on. Devices switch over as they renew their leases.",
+            needsReboot: false
+        )
+    }
+
+    func disableDHCP() async throws -> BrickActionResult {
+        dhcpEnabled = false
+        dhcpCheckCount = 0 // the next setup run starts fresh
+        return BrickActionResult(ok: true, message: "Whole-home protection turned off")
+    }
+
+    func routerInfo() async throws -> RouterInfo {
+        RouterInfo(
+            gatewayIP: "192.168.1.1", gatewayMAC: "aa:bb:cc:dd:ee:ff",
+            vendor: "Xfinity", vendorKey: .xfinity, portalURL: "http://10.0.0.1"
+        )
+    }
+
+    // MARK: - Device
+
     func deviceHealth() async throws -> DeviceHealth {
         DeviceHealth(hostname: "privacybrick", uptime: "3 weeks, 2 days",
                      cpuTempCelsius: 47.2, memoryTotalMb: 3796, memoryUsedMb: 812,
@@ -158,6 +210,15 @@ final class MockBrickAPI: BrickAPI, @unchecked Sendable {
 
     func rebootDevice() async throws -> BrickActionResult {
         BrickActionResult(ok: true, message: "Rebooting…")
+    }
+
+    func startUpdate() async throws -> BrickActionResult {
+        updateRunningUntil = Date().addingTimeInterval(4)
+        return BrickActionResult(ok: true, message: "Update started — installing the latest PrivacyBrick software.")
+    }
+
+    func updateStatus() async throws -> UpdateStatus {
+        UpdateStatus(running: updateRunningUntil.map { Date() < $0 } ?? false)
     }
 }
 
