@@ -92,23 +92,32 @@ final class EndpointResolver: @unchecked Sendable {
     /// The endpoint to use right now. Probes candidates in order; throws
     /// `BrickError.unreachable` when none answer.
     func resolve() async throws -> BrickEndpoint {
-        lock.lock()
-        let cached = cachedActive
-        let fresh = Date().timeIntervalSince(cachedAt) < cacheLifetime
-        lock.unlock()
-        if let cached, fresh { return cached }
+        if let cached = cachedIfFresh() { return cached }
 
         for endpoint in Self.ordered(candidates) {
             guard let url = endpoint.url else { continue }
             if await probe(url) {
-                lock.lock()
-                cachedActive = endpoint
-                cachedAt = Date()
-                lock.unlock()
+                cache(endpoint)
                 return endpoint
             }
         }
         throw BrickError.unreachable
+    }
+
+    private func cachedIfFresh() -> BrickEndpoint? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let cachedActive, Date().timeIntervalSince(cachedAt) < cacheLifetime else {
+            return nil
+        }
+        return cachedActive
+    }
+
+    private func cache(_ endpoint: BrickEndpoint) {
+        lock.lock()
+        defer { lock.unlock() }
+        cachedActive = endpoint
+        cachedAt = Date()
     }
 
     /// Drop the cached winner (e.g. after a request-level connection failure)

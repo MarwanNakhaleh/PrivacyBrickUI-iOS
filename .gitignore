@@ -1,0 +1,5 @@
+PrivacyBrick.xcodeproj/
+PrivacyBrick/Info.plist
+DerivedData/
+*.xcuserdatad/
+.DS_Store

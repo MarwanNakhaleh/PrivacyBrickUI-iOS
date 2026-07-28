@@ -66,7 +66,7 @@ final class BonjourDiscovery: DeviceLocator {
         }
     }
 
-    private static func hostString(_ host: NWEndpoint.Host) -> String {
+    private nonisolated static func hostString(_ host: NWEndpoint.Host) -> String {
         switch host {
         case let .ipv4(address): return "\(address)"
         case let .ipv6(address): return "[\(address)]"
