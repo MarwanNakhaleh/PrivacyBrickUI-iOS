@@ -89,6 +89,17 @@ struct DeviceView: View {
             }
 
             Section {
+                NavigationLink {
+                    RemoteConsoleView(model: appModel.makeRemoteConsoleModel())
+                } label: {
+                    Label("Remote console", systemImage: "terminal")
+                }
+                .accessibilityIdentifier("device.consoleLink")
+            } footer: {
+                Text("Advanced: run commands directly on your PrivacyBrick over SSH.")
+            }
+
+            Section {
                 Button {
                     showRebootConfirm = true
                 } label: {

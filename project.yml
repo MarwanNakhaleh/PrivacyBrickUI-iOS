@@ -11,11 +11,22 @@ settings:
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
 
+packages:
+  # SUPPLY CHAIN: Citadel's SSH protocol layer is a community fork of
+  # apple/swift-nio-ssh (Apple hasn't merged their PRs for years; 0.12.x
+  # pins Wellz26/swift-nio-ssh). Package.resolved freezes exact commits,
+  # so review the transitive pins whenever bumping this version.
+  Citadel:
+    url: https://github.com/orlandos-nl/Citadel
+    from: 0.12.1
+
 targets:
   PrivacyBrick:
     type: application
     platform: iOS
     sources: [PrivacyBrick]
+    dependencies:
+      - package: Citadel
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.marwannakhaleh.privacybrick

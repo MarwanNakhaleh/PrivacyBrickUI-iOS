@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 
@@ -200,6 +201,17 @@ final class MockBrickAPI: BrickAPI, @unchecked Sendable {
         )
     }
 
+    // MARK: - Remote Console
+
+    private var installedSSHKeys: Set<String> = []
+
+    func installSSHKey(publicKey: String) async throws -> BrickActionResult {
+        let alreadyInstalled = !installedSSHKeys.insert(publicKey).inserted
+        return BrickActionResult(
+            ok: true, message: alreadyInstalled ? "Key already installed" : "Key installed"
+        )
+    }
+
     // MARK: - Device
 
     func deviceHealth() async throws -> DeviceHealth {
@@ -220,6 +232,43 @@ final class MockBrickAPI: BrickAPI, @unchecked Sendable {
     func updateStatus() async throws -> UpdateStatus {
         UpdateStatus(running: updateRunningUntil.map { Date() < $0 } ?? false)
     }
+}
+
+/// Deterministic SSH key material for previews and `-mockAPI` runs — never
+/// touches the Keychain.
+final class MockSSHKeys: SSHKeyProviding {
+    private let key = Curve25519.Signing.PrivateKey()
+
+    func publicKeyOpenSSH(comment: String) throws -> String {
+        SSHKeyEncoding.openSSHPublicKey(rawPublicKey: key.publicKey.rawRepresentation,
+                                        comment: comment)
+    }
+
+    func privateKey() throws -> Curve25519.Signing.PrivateKey { key }
+}
+
+/// Canned "shell" so the console flow can be demoed with no hardware.
+final class MockRemoteShell: RemoteShellConnector {
+    func connect(host: String, username: String) async throws -> any RemoteShellSession {
+        try await Task.sleep(for: .milliseconds(300))
+        return MockRemoteShellSession()
+    }
+}
+
+final class MockRemoteShellSession: RemoteShellSession {
+    func run(_ command: String) async throws -> String {
+        try await Task.sleep(for: .milliseconds(150))
+        switch command {
+        case "uname -a":
+            return "Linux privacybrick 6.6.31 #1 SMP aarch64 GNU/Linux"
+        case "uptime":
+            return " 18:59:01 up 23 days,  4:12,  0 users,  load average: 0.08, 0.04, 0.01"
+        default:
+            return "(demo shell) ran: \(command)"
+        }
+    }
+
+    func close() async {}
 }
 
 /// Instantly "finds" the demo brick — previews and UI tests never wait on mDNS.

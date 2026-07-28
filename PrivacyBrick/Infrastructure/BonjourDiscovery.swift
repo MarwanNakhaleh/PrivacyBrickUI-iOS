@@ -17,6 +17,13 @@ final class BonjourDiscovery: DeviceLocator {
 
     @ObservationIgnored private var browser: NWBrowser?
     @ObservationIgnored private var resolvers: [NWConnection] = []
+    /// Services with a resolver in flight — Bonjour re-announces results on
+    /// every network flap, and without this each announcement would spawn a
+    /// fresh connection, accumulating without bound for the screen's lifetime.
+    @ObservationIgnored private var resolving: Set<String> = []
+    /// Bumped on every stop() so timeout tasks from a previous discovery
+    /// session can't retry or clear `resolving` against the new session.
+    @ObservationIgnored private var generation = 0
 
     func start() {
         stop()
@@ -36,17 +43,30 @@ final class BonjourDiscovery: DeviceLocator {
     }
 
     func stop() {
+        generation += 1
         browser?.cancel()
         browser = nil
         resolvers.forEach { $0.cancel() }
         resolvers = []
+        resolving = []
     }
 
     private func resolve(_ results: Set<NWBrowser.Result>) {
         for result in results {
             guard case let .service(name, _, _, _) = result.endpoint else { continue }
+            guard !resolving.contains(name),
+                  !found.contains(where: { $0.id == name })
+            else { continue }
+            resolving.insert(name)
             startResolver(for: result.endpoint, name: name, forceIPv4: true)
         }
+    }
+
+    /// Cancel a finished/abandoned resolver and drop our strong reference.
+    private func prune(_ connection: NWConnection?) {
+        guard let connection else { return }
+        connection.cancel()
+        resolvers.removeAll { $0 === connection }
     }
 
     /// A throwaway TCP connection resolves the service to a concrete
@@ -83,21 +103,29 @@ final class BonjourDiscovery: DeviceLocator {
                 guard let self else { return }
                 self.found.removeAll { $0.id == brick.id }
                 self.found.append(brick)
-                connection?.cancel()
+                self.resolving.remove(name)
+                self.prune(connection)
             }
         }
         connection.start(queue: .main)
 
-        if forceIPv4 {
-            Task { @MainActor [weak self, weak connection] in
-                try? await Task.sleep(for: Self.ipv4Timeout)
-                guard let self, let connection,
-                      self.browser != nil,                       // still discovering
-                      !self.found.contains(where: { $0.id == name })
-                else { return }
+        let gen = generation
+        Task { @MainActor [weak self, weak connection] in
+            try? await Task.sleep(for: Self.ipv4Timeout)
+            guard let self,
+                  self.generation == gen,                    // same session
+                  self.browser != nil,                       // still discovering
+                  !self.found.contains(where: { $0.id == name })
+            else { return }
+            self.prune(connection)
+            if forceIPv4 {
                 Self.log.info("IPv4 resolve of \(name, privacy: .public) timed out — retrying with IPv6 allowed")
-                connection.cancel()
                 self.startResolver(for: serviceEndpoint, name: name, forceIPv4: false)
+            } else {
+                // Both attempts came up dry — let a future Bonjour
+                // announcement trigger a fresh resolve.
+                Self.log.info("resolve of \(name, privacy: .public) gave up")
+                self.resolving.remove(name)
             }
         }
     }

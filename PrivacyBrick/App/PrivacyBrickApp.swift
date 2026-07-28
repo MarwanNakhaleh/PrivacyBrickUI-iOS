@@ -18,7 +18,8 @@ struct PrivacyBrickApp: App {
                 endpoints: EndpointResolver(
                     defaults: UserDefaults(suiteName: "mock")!,
                     probe: { _ in true }
-                )
+                ),
+                console: RemoteConsoleDependencies(keys: MockSSHKeys(), shell: MockRemoteShell())
             ))
             _locator = State(initialValue: MockDeviceLocator())
         } else {

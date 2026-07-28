@@ -64,6 +64,9 @@ protocol BrickAPI {
     func disableDHCP() async throws -> BrickActionResult
     func routerInfo() async throws -> RouterInfo
 
+    // Remote Console
+    func installSSHKey(publicKey: String) async throws -> BrickActionResult
+
     // Device
     func deviceHealth() async throws -> DeviceHealth
     func rebootDevice() async throws -> BrickActionResult

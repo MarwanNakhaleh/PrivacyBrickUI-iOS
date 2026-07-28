@@ -1,6 +1,20 @@
 import Foundation
 import Observation
 
+/// What the remote console needs beyond the API: the device's SSH key and a
+/// way to open a shell with it. Bundled so the composition root can swap in
+/// fakes (`-mockAPI`, unit tests) without AppModel knowing the difference.
+struct RemoteConsoleDependencies {
+    let keys: any SSHKeyProviding
+    let shell: any RemoteShellConnector
+
+    /// Real keypair in the Keychain + Citadel SSH.
+    static func live() -> RemoteConsoleDependencies {
+        let store = SSHKeyStore()
+        return RemoteConsoleDependencies(keys: store, shell: CitadelShellConnector(keys: store))
+    }
+}
+
 /// Root application state: whether we're paired, the dashboard overview, and
 /// the pairing flow. Feature screens make their own API calls; this model owns
 /// only what crosses features.
@@ -21,14 +35,27 @@ final class AppModel {
     let api: BrickAPI
     private let tokens: TokenStore
     private let endpoints: EndpointResolver
+    private let console: RemoteConsoleDependencies
 
-    init(api: BrickAPI, tokens: TokenStore, endpoints: EndpointResolver) {
+    init(
+        api: BrickAPI,
+        tokens: TokenStore,
+        endpoints: EndpointResolver,
+        console: RemoteConsoleDependencies? = nil
+    ) {
         self.api = api
         self.tokens = tokens
         self.endpoints = endpoints
+        self.console = console ?? .live()
         if tokens.token != nil, endpoints.hasCandidates {
             phase = .connected
         }
+    }
+
+    /// Fresh model for the console screen; SSH dependencies stay at the root.
+    func makeRemoteConsoleModel() -> RemoteConsoleModel {
+        RemoteConsoleModel(api: api, keys: console.keys, shell: console.shell,
+                           endpoints: endpoints)
     }
 
     var deviceName: String { overview?.deviceName ?? "PrivacyBrick" }

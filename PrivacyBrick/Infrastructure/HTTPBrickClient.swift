@@ -131,6 +131,12 @@ final class HTTPBrickClient: BrickAPI {
         try await request("GET", "/api/v1/system/router")
     }
 
+    // MARK: - Remote Console
+
+    func installSSHKey(publicKey: String) async throws -> BrickActionResult {
+        try await request("POST", "/api/v1/system/ssh-key", body: ["public_key": publicKey])
+    }
+
     // MARK: - Device
 
     func deviceHealth() async throws -> DeviceHealth {
