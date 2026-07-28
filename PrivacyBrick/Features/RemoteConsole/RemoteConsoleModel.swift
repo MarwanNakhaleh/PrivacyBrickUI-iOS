@@ -91,6 +91,12 @@ final class RemoteConsoleModel {
         guard isEnabled, state != .connecting, state != .connected else { return }
         state = .connecting
         do {
+            // Re-post the public key first (idempotent): the brick pins SSH
+            // access to the address that installed the key, so this moves
+            // the whitelist along whenever this device's IP has changed.
+            if let publicKey = try? keys.publicKeyOpenSSH(comment: Self.keyComment) {
+                _ = try? await api.installSSHKey(publicKey: publicKey)
+            }
             let endpoint = try await endpoints.resolve()
             let host = Self.sshHost(from: endpoint.host)
             session = try await shell.connect(host: host, username: Self.username)
