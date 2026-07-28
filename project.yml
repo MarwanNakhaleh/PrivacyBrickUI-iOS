@@ -1,0 +1,65 @@
+# XcodeGen spec — run `xcodegen generate`, then open PrivacyBrick.xcodeproj
+name: PrivacyBrick
+options:
+  bundleIdPrefix: com.marwannakhaleh
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+
+targets:
+  PrivacyBrick:
+    type: application
+    platform: iOS
+    sources: [PrivacyBrick]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.marwannakhaleh.privacybrick
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: PrivacyBrick
+    info:
+      path: PrivacyBrick/Info.plist
+      properties:
+        CFBundleDisplayName: PrivacyBrick
+        UILaunchScreen: {}
+        # Bonjour discovery of the Pi on the home network.
+        NSLocalNetworkUsageDescription: "PrivacyBrick finds your privacy device on your home WiFi so the app can talk to it directly. Nothing leaves your network."
+        NSBonjourServices: ["_privacybrick._tcp"]
+        # The Pi API is plain HTTP on the trusted LAN / tailnet.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+
+  PrivacyBrickTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [PrivacyBrickTests]
+    dependencies:
+      - target: PrivacyBrick
+
+  PrivacyBrickUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [PrivacyBrickUITests]
+    dependencies:
+      - target: PrivacyBrick
+
+schemes:
+  PrivacyBrick:
+    build:
+      targets:
+        PrivacyBrick: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - PrivacyBrickTests
+        - PrivacyBrickUITests
