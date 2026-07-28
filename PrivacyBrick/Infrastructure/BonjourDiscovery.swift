@@ -40,36 +40,67 @@ final class BonjourDiscovery: DeviceLocator {
     private func resolve(_ results: Set<NWBrowser.Result>) {
         for result in results {
             guard case let .service(name, _, _, _) = result.endpoint else { continue }
-            // A throwaway TCP connection resolves the service to a concrete
-            // host:port; it's cancelled the moment we have the address.
-            let connection = NWConnection(to: result.endpoint, using: .tcp)
-            resolvers.append(connection)
-            connection.stateUpdateHandler = { [weak self, weak connection] state in
-                guard case .ready = state,
-                      let endpoint = connection?.currentPath?.remoteEndpoint,
-                      case let .hostPort(host, port) = endpoint
-                else { return }
-                let brick = DiscoveredBrick(
-                    id: name,
-                    name: name,
-                    host: Self.hostString(host),
-                    port: Int(port.rawValue)
-                )
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.found.removeAll { $0.id == brick.id }
-                    self.found.append(brick)
-                    connection?.cancel()
-                }
-            }
-            connection.start(queue: .main)
+            startResolver(for: result.endpoint, name: name, forceIPv4: true)
         }
     }
 
-    private nonisolated static func hostString(_ host: NWEndpoint.Host) -> String {
+    /// A throwaway TCP connection resolves the service to a concrete
+    /// host:port; it's cancelled the moment we have the address.
+    /// IPv4 is tried first — an IPv6 link-local answer (fe80::…%en0) makes a
+    /// hostile URL host — but if nothing answers within `Self.ipv4Timeout`
+    /// the resolver retries once allowing IPv6, so IPv6-only networks
+    /// (e.g. NAT64, used by App Review) still discover the brick.
+    private static let ipv4Timeout: Duration = .seconds(3)
+
+    private func startResolver(for serviceEndpoint: NWEndpoint, name: String, forceIPv4: Bool) {
+        let params = NWParameters.tcp
+        if forceIPv4,
+           let ip = params.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
+            ip.version = .v4
+        }
+        let connection = NWConnection(to: serviceEndpoint, using: params)
+        resolvers.append(connection)
+        connection.stateUpdateHandler = { [weak self, weak connection] state in
+            guard case .ready = state,
+                  let endpoint = connection?.currentPath?.remoteEndpoint,
+                  case let .hostPort(host, port) = endpoint
+            else { return }
+            let brick = DiscoveredBrick(
+                id: name,
+                name: name,
+                host: Self.hostString(host),
+                port: Int(port.rawValue)
+            )
+            Task { @MainActor in
+                guard let self else { return }
+                self.found.removeAll { $0.id == brick.id }
+                self.found.append(brick)
+                connection?.cancel()
+            }
+        }
+        connection.start(queue: .main)
+
+        if forceIPv4 {
+            Task { @MainActor [weak self, weak connection] in
+                try? await Task.sleep(for: Self.ipv4Timeout)
+                guard let self, let connection,
+                      self.browser != nil,                       // still discovering
+                      !self.found.contains(where: { $0.id == name })
+                else { return }
+                connection.cancel()
+                self.startResolver(for: serviceEndpoint, name: name, forceIPv4: false)
+            }
+        }
+    }
+
+    nonisolated static func hostString(_ host: NWEndpoint.Host) -> String {
         switch host {
         case let .ipv4(address): return "\(address)"
-        case let .ipv6(address): return "[\(address)]"
+        case let .ipv6(address):
+            // A zone ID ("fe80::1%en0") must be percent-encoded (RFC 6874)
+            // or URL(string:) rejects the whole URL.
+            let text = "\(address)".replacingOccurrences(of: "%", with: "%25")
+            return "[\(text)]"
         case let .name(name, _): return name
         @unknown default: return "\(host)"
         }
