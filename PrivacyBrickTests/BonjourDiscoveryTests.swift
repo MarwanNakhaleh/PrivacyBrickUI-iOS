@@ -9,6 +9,19 @@ final class BonjourDiscoveryTests: XCTestCase {
         XCTAssertNotNil(URL(string: "http://\(BonjourDiscovery.hostString(host)):8787"))
     }
 
+    func test_hostString_ipv4WithZone_stripsZone() throws {
+        // Network.framework attaches the resolving interface to addresses it
+        // hands back ("10.0.0.230%en0"); the bare "%" makes URL(string:)
+        // reject the URL, so the brick looked unreachable (real-device bug,
+        // 2026-07-28).
+        guard let address = IPv4Address("10.0.0.230%en0") else {
+            throw XCTSkip("no en0 interface in this test environment")
+        }
+        let hostString = BonjourDiscovery.hostString(NWEndpoint.Host.ipv4(address))
+        XCTAssertEqual(hostString, "10.0.0.230")
+        XCTAssertNotNil(URL(string: "http://\(hostString):8787"))
+    }
+
     func test_hostString_ipv6_bracketsAddress() {
         let host = NWEndpoint.Host.ipv6(IPv6Address("2001:db8::1")!)
         XCTAssertEqual(BonjourDiscovery.hostString(host), "[2001:db8::1]")

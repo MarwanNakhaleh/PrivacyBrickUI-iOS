@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Observation
+import OSLog
 
 /// Browses for `_privacybrick._tcp` over Bonjour and resolves each service to
 /// host:port. Used only on first run (or re-pairing) — after pairing, the
@@ -8,6 +9,10 @@ import Observation
 @Observable
 @MainActor
 final class BonjourDiscovery: DeviceLocator {
+    private static let log = Logger(
+        subsystem: "com.marwannakhaleh.privacybrick", category: "discovery"
+    )
+
     private(set) var found: [DiscoveredBrick] = []
 
     @ObservationIgnored private var browser: NWBrowser?
@@ -58,9 +63,11 @@ final class BonjourDiscovery: DeviceLocator {
            let ip = params.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
             ip.version = .v4
         }
+        Self.log.info("resolving \(name, privacy: .public) forceIPv4=\(forceIPv4)")
         let connection = NWConnection(to: serviceEndpoint, using: params)
         resolvers.append(connection)
         connection.stateUpdateHandler = { [weak self, weak connection] state in
+            Self.log.info("resolver \(name, privacy: .public) state: \(String(describing: state), privacy: .public)")
             guard case .ready = state,
                   let endpoint = connection?.currentPath?.remoteEndpoint,
                   case let .hostPort(host, port) = endpoint
@@ -71,6 +78,7 @@ final class BonjourDiscovery: DeviceLocator {
                 host: Self.hostString(host),
                 port: Int(port.rawValue)
             )
+            Self.log.info("resolved \(name, privacy: .public) -> \(brick.host, privacy: .public):\(brick.port)")
             Task { @MainActor in
                 guard let self else { return }
                 self.found.removeAll { $0.id == brick.id }
@@ -87,6 +95,7 @@ final class BonjourDiscovery: DeviceLocator {
                       self.browser != nil,                       // still discovering
                       !self.found.contains(where: { $0.id == name })
                 else { return }
+                Self.log.info("IPv4 resolve of \(name, privacy: .public) timed out — retrying with IPv6 allowed")
                 connection.cancel()
                 self.startResolver(for: serviceEndpoint, name: name, forceIPv4: false)
             }
@@ -95,7 +104,11 @@ final class BonjourDiscovery: DeviceLocator {
 
     nonisolated static func hostString(_ host: NWEndpoint.Host) -> String {
         switch host {
-        case let .ipv4(address): return "\(address)"
+        case let .ipv4(address):
+            // Network.framework attaches the resolving interface as a zone
+            // ("10.0.0.230%en0"). An IPv4 URL host never needs it, and the
+            // bare "%" makes URL(string:) reject the whole URL.
+            return "\(address)".split(separator: "%").first.map(String.init) ?? "\(address)"
         case let .ipv6(address):
             // A zone ID ("fe80::1%en0") must be percent-encoded (RFC 6874)
             // or URL(string:) rejects the whole URL.

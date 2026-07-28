@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// One way to reach the brick.
 struct BrickEndpoint: Codable, Hashable {
@@ -95,12 +96,18 @@ final class EndpointResolver: @unchecked Sendable {
         if let cached = cachedIfFresh() { return cached }
 
         for endpoint in Self.ordered(candidates) {
-            guard let url = endpoint.url else { continue }
+            guard let url = endpoint.url else {
+                Self.log.error("candidate \(endpoint.kind.rawValue, privacy: .public) host '\(endpoint.host, privacy: .public)' port \(endpoint.port) makes an invalid URL — skipped")
+                continue
+            }
+            Self.log.info("probing \(url.absoluteString, privacy: .public)")
             if await probe(url) {
+                Self.log.info("probe OK — using \(url.absoluteString, privacy: .public)")
                 cache(endpoint)
                 return endpoint
             }
         }
+        Self.log.error("no candidate answered (\(self.candidates.count) tried) — unreachable")
         throw BrickError.unreachable
     }
 
@@ -152,9 +159,18 @@ final class EndpointResolver: @unchecked Sendable {
     private static func httpPing(_ base: URL) async -> Bool {
         var request = URLRequest(url: base.appendingPathComponent("/api/v1/ping"))
         request.timeoutInterval = 2
-        guard let (_, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse
-        else { return false }
-        return http.statusCode == 200
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            log.info("ping \(request.url?.absoluteString ?? "?", privacy: .public) -> HTTP \(http.statusCode)")
+            return http.statusCode == 200
+        } catch {
+            log.error("ping \(request.url?.absoluteString ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public) (\((error as NSError).domain, privacy: .public) \((error as NSError).code))")
+            return false
+        }
     }
+
+    private static let log = Logger(
+        subsystem: "com.marwannakhaleh.privacybrick", category: "endpoint"
+    )
 }
