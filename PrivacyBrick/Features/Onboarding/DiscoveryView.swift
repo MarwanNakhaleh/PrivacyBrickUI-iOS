@@ -6,6 +6,11 @@ struct DiscoveryView: View {
     @Environment(AppModel.self) private var appModel
     let locator: any DeviceLocator
 
+    /// How long to search before admitting we can't find anything.
+    private static let searchTimeout: Duration = .seconds(15)
+    @State private var searchTimedOut = false
+    @State private var searchAttempt = 0
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -24,13 +29,38 @@ struct DiscoveryView: View {
                 .padding(.horizontal, 32)
 
             if locator.found.isEmpty {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Looking for your PrivacyBrick…")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                if searchTimedOut {
+                    VStack(spacing: 12) {
+                        Image(systemName: "wifi.exclamationmark")
+                            .font(.title)
+                            .foregroundStyle(.orange)
+                        Text("Couldn't find your PrivacyBrick")
+                            .font(.headline)
+                        Text("Check that it's plugged in and powered on, and that this device is on the same WiFi network.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                        Button("Search Again") {
+                            searchTimedOut = false
+                            searchAttempt += 1
+                            locator.stop()
+                            locator.start()
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("discovery.retryButton")
+                    }
+                    .padding(.top, 16)
+                    .accessibilityIdentifier("discovery.timeout")
+                } else {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Looking for your PrivacyBrick…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 16)
                 }
-                .padding(.top, 16)
             } else {
                 VStack(spacing: 12) {
                     ForEach(locator.found) { brick in
@@ -72,5 +102,11 @@ struct DiscoveryView: View {
         }
         .onAppear { locator.start() }
         .onDisappear { locator.stop() }
+        .task(id: searchAttempt) {
+            try? await Task.sleep(for: Self.searchTimeout)
+            if !Task.isCancelled, locator.found.isEmpty {
+                searchTimedOut = true
+            }
+        }
     }
 }
